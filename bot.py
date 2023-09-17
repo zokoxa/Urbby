@@ -32,11 +32,10 @@ async def on_ready():
 
 
 @client.event
-async def on_message(mes):
-    if mes.author == client.user:
+async def on_message(message):
+    if message.author == client.user:
         return
 
-    message = mes
     # add channel id
     if message.content == triggerCommand + "SET":
         channel_id = message.channel.id
@@ -47,10 +46,19 @@ async def on_message(mes):
         word_of_the_day = responses.get_word_of_day()
         await message.channel.send(responses.handle_word_of_the_day(word_of_the_day))
         await message.channel.send("`Channel Registered!`")
-        # remove channel id
-    if message.content == triggerCommand + "#REM":
+
+    # remove channel id
+    if message.content == triggerCommand + "REM":
         channel_id = message.channel.id
         channels.remove(channel_id)
         await message.channel.send("`Channel Removed!`")
+
+    #define word
+    commands = ["define ", "what is "]
+    for command in commands:
+        if message.content.startswith(triggerCommand + command):
+            defineWord = message.content[len(triggerCommand) + len(command):]
+
+            await message.channel.send(responses.define(responses.get_word(defineWord)))
 
 client.run(token)
