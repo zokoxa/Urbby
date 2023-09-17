@@ -20,15 +20,14 @@ def get_word(word):
     res = requests.get("http://api.urbandictionary.com/v0/define?term=" + word)
     return res.json()
 
-def define(data):
+def define(dictionary):
 
-    if (len(data["list"]) == 0):
+    if (len(dictionary["list"]) == 0):
         return "`That word is not in urban dictionary.`"
 
-    first_definition = data["list"][0]  # gets first definition
+    first_definition = dictionary["list"][0]  # gets first definition
     definition = first_definition["definition"]  # definition of word
-    definition = definition.replace('[', '')
-    definition = definition.replace(']', '')
+    definition = definition.replace('[', '').replace(']', '')
 
     return "`Word: " + first_definition["word"] + " \nDefinition: " + definition + "`"
 
@@ -38,6 +37,5 @@ def define(data):
 def scrape_word() -> str:
     req = requests.get("https://www.urbandictionary.com/")
     soup = BeautifulSoup(req.text, "html.parser")
-    tag = soup.find('h1')
-    word = tag.string
-    return word
+    return soup.find('h1').string
+
