@@ -21,13 +21,18 @@ def get_word(word):
     return res.json()
 
 def define(data):
+
+    if (len(data["list"]) == 0):
+        return "`That word is not in urban dictionary.`"
+
     first_definition = data["list"][0]  # gets first definition
-    author = first_definition["author"]  # author of definition
     definition = first_definition["definition"]  # definition of word
-    word = first_definition["word"]
     definition = definition.replace('[', '')
     definition = definition.replace(']', '')
-    return "`Word: " + word + " \nDefinition: " + definition + "`"
+
+    return "`Word: " + first_definition["word"] + " \nDefinition: " + definition + "`"
+
+
 
 # scraping from urban dictionary
 def scrape_word() -> str:
