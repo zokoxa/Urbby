@@ -8,6 +8,8 @@ client = discord.Client(intents=discord.Intents.all())
 
 urbanDURL = "https://www.urbandictionary.com/"
 
+triggerCommand = "#"
+
 channels = []
 # 1081429445300207617
 
@@ -36,7 +38,7 @@ async def on_message(mes):
 
     message = mes
     # add channel id
-    if message.content == "!zSET":
+    if message.content == triggerCommand + "SET":
         channel_id = message.channel.id
         if channels.__contains__(channel_id):
             await message.channel.send("`Channel Already Registered!`")
@@ -46,7 +48,7 @@ async def on_message(mes):
         await message.channel.send(responses.handle_word_of_the_day(word_of_the_day))
         await message.channel.send("`Channel Registered!`")
         # remove channel id
-    if message.content == "!zREM":
+    if message.content == triggerCommand + "#REM":
         channel_id = message.channel.id
         channels.remove(channel_id)
         await message.channel.send("`Channel Removed!`")
