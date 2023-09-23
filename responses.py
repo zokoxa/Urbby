@@ -27,7 +27,7 @@ def define(dictionary):
 
     first_definition = dictionary["list"][0]  # gets first definition
     definition = first_definition["definition"]  # definition of word
-    definition = definition.replace('[', '').replace(']', '').removesuffix("\r\n\r\n")
+    definition = definition.replace('[', '').replace(']', '').replace('`','\'').removesuffix("\r\n\r\n")
 
     return "`Word: " + first_definition["word"] + " \nDefinition: " + definition + "`"
 
