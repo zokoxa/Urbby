@@ -37,7 +37,7 @@ async def on_message(message):
         return
 
     # add channel id
-    if message.content == triggerCommand + "SET":
+    if message.content.upper() == triggerCommand + "SET":
         channel_id = message.channel.id
         if channels.__contains__(channel_id):
             await message.channel.send("`Channel Already Registered!`")
@@ -48,17 +48,17 @@ async def on_message(message):
         await message.channel.send("`Channel Registered!`")
 
     # remove channel id
-    if message.content == triggerCommand + "REM":
+    if message.content.upper() == triggerCommand + "REM":
         channel_id = message.channel.id
         channels.remove(channel_id)
         await message.channel.send("`Channel Removed!`")
 
     #define word
-    commands = ["define ", "what is "]
+    commands = ["DEFINE", "WHAT IS "]
     for command in commands:
-        if message.content.startswith(triggerCommand + command):
-            defineWord = message.content[len(triggerCommand) + len(command):]
+        if message.content.upper().startswith(triggerCommand + command):
+            word = message.content[len(triggerCommand) + len(command):]
 
-            await message.channel.send(responses.define(responses.get_word(defineWord)))
+            await message.channel.send(responses.define(responses.get_word(word)))
 
 client.run(token)
