@@ -22,12 +22,12 @@ def get_word(word):
 
 def define(dictionary):
 
-    if (len(dictionary["list"]) == 0):
+    if len(dictionary["list"]) == 0:
         return "`That word is not in urban dictionary.`"
 
     first_definition = dictionary["list"][0]  # gets first definition
     definition = first_definition["definition"]  # definition of word
-    definition = definition.replace('[', '').replace(']', '')
+    definition = definition.replace('[', '').replace(']', '').removesuffix("\r\n\r\n")
 
     return "`Word: " + first_definition["word"] + " \nDefinition: " + definition + "`"
 
