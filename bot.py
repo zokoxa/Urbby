@@ -102,7 +102,7 @@ async def send_message():
 
     for channel_id in channels_to_send:
         this_channel = client.get_channel(channel_id)
-        await this_channel.send(message)
+        await this_channel.send(embed=message)
         log.info(f"[OK] Sent to channel {channel_id}")
 
 
@@ -265,6 +265,6 @@ async def on_message(message):
             log.info(f"[--] '{word}' not found in channel {message.channel.id}")
             await message.channel.send(f"`'{word}' isn't in Urban Dictionary! You can add it here: https://www.urbandictionary.com/add.php`")
         else:
-            await message.channel.send(result)
+            await message.channel.send(embed=result)
 
 client.run(token)
