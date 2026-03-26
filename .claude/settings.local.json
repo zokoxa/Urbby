@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -s -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0.0.0 Safari/537.36\" https://www.urbandictionary.com/define.php?term=rizz)"
+      "Bash(curl -s -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0.0.0 Safari/537.36\" https://www.urbandictionary.com/define.php?term=rizz)",
+      "Bash(curl -s \"https://my.urbandictionary.com/add.php\")",
+      "Bash(grep -oE '\\(https?:\\)?//[^\"\"\"\"<>\\\\s]+|/[a-zA-Z0-9._/?&=-]+')",
+      "Bash(grep -v \"^//\")",
+      "Bash(curl -s \"https://my.urbandictionary.com/assets/application-a03821969dec51515aef904c96b7b22223902779dd85f97251559b15d66fc503.js\")",
+      "Bash(grep -oE \".post\\\\\\([^\\)]{0,100}\\\\\\)\")",
+      "Bash(grep -oE '//[a-zA-Z0-9._-]+\\\\.[a-zA-Z]{2,}[^\"\"\"\"<> ]*')"
     ]
   }
 }
