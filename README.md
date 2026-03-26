@@ -22,12 +22,13 @@ A Discord bot that fetches word definitions and sends a daily word of the day fr
 
 | Command | Description |
 |---|---|
-| `#SET` | Register the current channel to receive the daily word of the day (default: 09:00 UTC) |
-| `#REM` | Remove the current channel from the daily word list |
-| `#TIME HH:MM` | Set the time for the daily word of the day (e.g. `#TIME 08:30`) |
-| `#TIMEZONE <tz>` | Set the timezone using IANA format (e.g. `#TIMEZONE America/Los_Angeles`) |
-| `#DEFINE <word>` | Look up a word on Urban Dictionary |
-| `#WHAT IS <word>` | Look up a word on Urban Dictionary |
+| `#urbby set` | Register the current channel to receive the daily word of the day (default: 09:00 UTC) |
+| `#urbby rm` | Remove the current channel from the daily word list |
+| `#urbby time HH:MM` | Set the time for the daily word of the day (e.g. `#urbby time 08:30`) |
+| `#urbby timezone <tz>` | Set the timezone using IANA format (e.g. `#urbby timezone America/Los_Angeles`) |
+| `#urbby define <word>` | Look up a word on Urban Dictionary |
+| `#urbby what is <word>` | Look up a word on Urban Dictionary |
+| `#urbby help` | Show all available commands |
 
 Commands are case-insensitive.
 

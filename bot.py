@@ -1,10 +1,19 @@
 import os
+import json
+import logging
 import responses
 import discord
 from discord.ext import tasks
 from dotenv import load_dotenv
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+log = logging.getLogger(__name__)
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
@@ -13,12 +22,61 @@ client = discord.Client(intents=discord.Intents.all())
 
 urbanDURL = "https://www.urbandictionary.com/"
 
-triggerCommand = "#"
+triggerCommand = "#urbby "
 
-channels = {}  # {channel_id: {"time": "HH:MM", "tz": "UTC"}}
+CHANNELS_FILE = "channels.json"
+
+pending_timezone = set()  # channel_ids awaiting timezone input
+pending_time = set()  # channel_ids awaiting time input
 
 
-@tasks.loop(minutes=1)
+def load_channels():
+    if os.path.exists(CHANNELS_FILE):
+        with open(CHANNELS_FILE, "r") as f:
+            data = {int(k): v for k, v in json.load(f).items()}
+            log.info(f"Loaded {len(data)} channel(s) from {CHANNELS_FILE}")
+            return data
+    log.info("No channels file found, starting fresh")
+    return {}
+
+
+def save_channels():
+    with open(CHANNELS_FILE, "w") as f:
+        json.dump(channels, f)
+    log.info(f"Saved {len(channels)} channel(s) to {CHANNELS_FILE}")
+
+
+channels = load_channels()  # {channel_id: {"time": "HH:MM", "tz": "UTC"}}
+
+
+def fmt_time(time_str):
+    """Convert HH:MM to 12-hour AM/PM for display."""
+    return datetime.strptime(time_str, "%H:%M").strftime("%I:%M %p").lstrip("0")
+
+def parse_time(time_str):
+    """Parse HH:MM or H:MM AM/PM and return 24-hour HH:MM string, or None if invalid."""
+    for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M"):
+        try:
+            return datetime.strptime(time_str.strip(), fmt).strftime("%H:%M")
+        except ValueError:
+            continue
+    return None
+
+TZ_ALIASES = {
+    "PST": "America/Los_Angeles",
+    "PDT": "America/Los_Angeles",
+    "MST": "America/Denver",
+    "MDT": "America/Denver",
+    "CST": "America/Chicago",
+    "CDT": "America/Chicago",
+    "EST": "America/New_York",
+    "EDT": "America/New_York",
+    "GMT": "UTC",
+    "UTC": "UTC",
+}
+
+
+@tasks.loop(seconds=30)
 async def send_message():
     channels_to_send = [
         cid for cid, cfg in channels.items()
@@ -28,17 +86,20 @@ async def send_message():
     if not channels_to_send:
         return
 
+    log.info(f"Sending word of the day to {len(channels_to_send)} channel(s)")
     word_of_the_day = responses.get_word_of_day()
 
     for channel_id in channels_to_send:
         this_channel = client.get_channel(channel_id)
         await this_channel.send(responses.handle_word_of_the_day(word_of_the_day))
+        log.info(f"Sent word of the day to channel {channel_id}")
 
 
 @client.event
 async def on_ready():
-    await client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Urban Dictionary"))
+    await client.change_presence(activity=discord.CustomActivity(name="#urbby define <word>"))
     send_message.start()
+    log.info("Urbby Clone Bot is running")
     print('Urbby Clone Bot is running')
 
 
@@ -47,66 +108,147 @@ async def on_message(message):
     if message.author == client.user:
         return
 
+    content = message.content
+    upper = content.upper()
+
+    # handle pending timezone input
+    if message.channel.id in pending_timezone:
+        pending_timezone.discard(message.channel.id)
+        tz_input = content.strip().upper()
+        tz_str = TZ_ALIASES.get(tz_input)
+        if not tz_str:
+            try:
+                ZoneInfo(content.strip())
+                tz_str = content.strip()
+            except ZoneInfoNotFoundError:
+                log.warning(f"Channel {message.channel.id} provided invalid timezone: {content.strip()}, defaulting to UTC")
+                await message.channel.send("`Invalid timezone. Defaulting to UTC. Use #urbby timezone <tz> to change it.`")
+                tz_str = "UTC"
+        channels[message.channel.id]["tz"] = tz_str
+        save_channels()
+        log.info(f"Channel {message.channel.id} set timezone to {tz_str}")
+        await message.channel.send(f"`Timezone set to {tz_str}. What time would you like the word of the day? (e.g. 8:30 AM or 14:00)`")
+        pending_time.add(message.channel.id)
+        return
+
+    # handle pending time input
+    if message.channel.id in pending_time:
+        pending_time.discard(message.channel.id)
+        parsed = parse_time(content)
+        if not parsed:
+            log.warning(f"Channel {message.channel.id} provided invalid time: {content.strip()}")
+            await message.channel.send("`Invalid time format. Use HH:MM or H:MM AM/PM (e.g. 8:30 AM or 14:00). Time set to default 09:00.`")
+            return
+        channels[message.channel.id]["time"] = parsed
+        save_channels()
+        tz = channels[message.channel.id]["tz"]
+        log.info(f"Channel {message.channel.id} set time to {parsed} {tz}")
+        await message.channel.send(f"`Got it! Word of the day will be posted at {fmt_time(parsed)} {tz} daily.`")
+        return
+
+    if not upper.startswith(triggerCommand.upper()):
+        return
+
+    args = content[len(triggerCommand):].strip()
+    args_upper = args.upper()
+
     # add channel id
-    if message.content.upper() == triggerCommand + "SET":
+    if args_upper == "SET":
         channel_id = message.channel.id
         if channel_id in channels:
             await message.channel.send("`Channel Already Registered!`")
             return
         channels[channel_id] = {"time": "09:00", "tz": "UTC"}
-        word_of_the_day = responses.get_word_of_day()
-        await message.channel.send(responses.handle_word_of_the_day(word_of_the_day))
-        await message.channel.send("`Channel Registered! Default time is 09:00 UTC. Use #TIME HH:MM to change it and #TIMEZONE <timezone> to set your timezone (e.g. #TIMEZONE America/Los_Angeles).`")
+        save_channels()
+        log.info(f"Channel {channel_id} registered")
+        await message.channel.send("`Channel Registered! What timezone are you in? (e.g. PST, EST, CST, MST, GMT, UTC)`")
+        pending_timezone.add(channel_id)
 
     # remove channel id
-    if message.content.upper() == triggerCommand + "REM":
+    elif args_upper == "RM":
         channel_id = message.channel.id
         if channel_id not in channels:
-            await message.channel.send("`Channel not registered! Use #SET first.`")
+            await message.channel.send("`Channel not registered! Use #urbby set first.`")
             return
         channels.pop(channel_id)
+        save_channels()
+        log.info(f"Channel {channel_id} removed")
         await message.channel.send("`Channel Removed!`")
 
     # set time for word of the day
-    if message.content.upper().startswith(triggerCommand + "TIME "):
+    elif args_upper.startswith("TIME "):
         channel_id = message.channel.id
         if channel_id not in channels:
-            await message.channel.send("`Channel not registered! Use #SET first.`")
+            await message.channel.send("`Channel not registered! Use #urbby set first.`")
             return
-        time_str = message.content[len(triggerCommand) + len("TIME "):].strip()
-        try:
-            datetime.strptime(time_str, "%H:%M")
-        except ValueError:
-            await message.channel.send("`Invalid time format. Use HH:MM (e.g. #TIME 08:30)`")
+        time_str = args[len("TIME "):].strip()
+        parsed = parse_time(time_str)
+        if not parsed:
+            log.warning(f"Channel {channel_id} provided invalid time: {time_str}")
+            await message.channel.send("`Invalid time format. Use HH:MM or H:MM AM/PM (e.g. #urbby time 8:30 AM or #urbby time 14:00)`")
             return
-        channels[channel_id]["time"] = time_str
+        channels[channel_id]["time"] = parsed
+        save_channels()
         tz = channels[channel_id]["tz"]
-        await message.channel.send(f"`Word of the day will be posted at {time_str} {tz} daily.`")
+        log.info(f"Channel {channel_id} updated time to {parsed} {tz}")
+        await message.channel.send(f"`Word of the day will be posted at {fmt_time(parsed)} {tz} daily.`")
 
     # set timezone
-    if message.content.upper().startswith(triggerCommand + "TIMEZONE "):
+    elif args_upper.startswith("TIMEZONE "):
         channel_id = message.channel.id
         if channel_id not in channels:
-            await message.channel.send("`Channel not registered! Use #SET first.`")
+            await message.channel.send("`Channel not registered! Use #urbby set first.`")
             return
-        tz_str = message.content[len(triggerCommand) + len("TIMEZONE "):].strip()
-        try:
-            ZoneInfo(tz_str)
-        except ZoneInfoNotFoundError:
-            await message.channel.send("`Invalid timezone. Use a valid IANA timezone (e.g. America/Los_Angeles, America/New_York, Europe/London).`")
-            return
-        channels[channel_id]["tz"] = tz_str
-        time = channels[channel_id]["time"]
-        await message.channel.send(f"`Timezone set to {tz_str}. Word of the day will be posted at {time} {tz_str} daily.`")
-
-    #define word
-    commands = ["DEFINE", "WHAT IS "]
-    for command in commands:
-        if message.content.upper().startswith(triggerCommand + command):
-            word = message.content[len(triggerCommand) + len(command):].strip()
-            if not word:
-                await message.channel.send(f"`Please provide a word. Usage: #{command.strip()} <word>`")
+        tz_str = args[len("TIMEZONE "):].strip()
+        tz_resolved = TZ_ALIASES.get(tz_str.upper())
+        if not tz_resolved:
+            try:
+                ZoneInfo(tz_str)
+                tz_resolved = tz_str
+            except ZoneInfoNotFoundError:
+                log.warning(f"Channel {channel_id} provided invalid timezone: {tz_str}")
+                await message.channel.send("`Invalid timezone. Use PST, EST, CST, MST, GMT, UTC or a valid IANA timezone.`")
                 return
-            await message.channel.send(responses.define(responses.get_word(word)))
+        channels[channel_id]["tz"] = tz_resolved
+        save_channels()
+        time = channels[channel_id]["time"]
+        log.info(f"Channel {channel_id} updated timezone to {tz_resolved}")
+        await message.channel.send(f"`Timezone set to {tz_resolved}. Word of the day will be posted at {fmt_time(time)} {tz_resolved} daily.`")
+
+    # help message
+    elif args_upper == "HELP":
+        log.info(f"Help requested in channel {message.channel.id}")
+        await message.channel.send(
+            "```\n"
+            "Urbby Commands\n"
+            "──────────────────────────────\n"
+            "#urbby set\n"
+            "  Register channel\n"
+            "#urbby rm\n"
+            "  Unregister channel\n"
+            "#urbby time HH:MM\n"
+            "  Set daily post time\n"
+            "#urbby timezone <tz>\n"
+            "  Set timezone (e.g. America/Los_Angeles)\n"
+            "#urbby define <word>\n"
+            "  Look up a word\n"
+            "#urbby what is <word>\n"
+            "  Look up a word\n"
+            "#urbby help\n"
+            "  Show this message\n"
+            "```"
+        )
+
+    # define word
+    elif args_upper.startswith("DEFINE ") or args_upper.startswith("WHAT IS "):
+        if args_upper.startswith("DEFINE "):
+            word = args[len("DEFINE "):].strip()
+        else:
+            word = args[len("WHAT IS "):].strip()
+        if not word:
+            await message.channel.send("`Please provide a word. Usage: #urbby define <word>`")
+            return
+        log.info(f"Looking up word '{word}' for channel {message.channel.id}")
+        await message.channel.send(responses.define(word))
 
 client.run(token)
