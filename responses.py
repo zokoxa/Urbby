@@ -2,6 +2,7 @@ import logging
 import discord
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import quote
 
 log = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ UD_URL = "https://www.urbandictionary.com"
 def build_embed(title, word, definition, example=None) -> discord.Embed:
     embed = discord.Embed(
         title=title,
-        url=f"{UD_URL}/define.php?term={word}",
+        url=f"{UD_URL}/define.php?term={quote(word)}",
         description=definition,
         color=UD_COLOR
     )
@@ -23,20 +24,13 @@ def build_embed(title, word, definition, example=None) -> discord.Embed:
     return embed
 
 
-def handle_word_of_the_day(data) -> discord.Embed:
+def handle_word_of_the_day(data, still=False) -> discord.Embed:
     first_definition = data["list"][0]
     word = first_definition["word"]
     definition = first_definition["definition"].replace('[', '').replace(']', '')
     example = first_definition.get("example")
-    return build_embed(f"Word of the Day: {word}", word, definition, example)
-
-
-def handle_still_word_of_the_day(data) -> discord.Embed:
-    first_definition = data["list"][0]
-    word = first_definition["word"]
-    definition = first_definition["definition"].replace('[', '').replace(']', '')
-    example = first_definition.get("example")
-    return build_embed(f"Still the Word of the Day: {word}", word, definition, example)
+    title = f"Still the Word of the Day: {word}" if still else f"Word of the Day: {word}"
+    return build_embed(title, word, definition, example)
 
 
 def get_word_of_day():
@@ -53,7 +47,7 @@ def get_word_of_day():
 
 def define(word) -> discord.Embed | None:
     log.info(f"[>>] Looking up '{word}' on Urban Dictionary")
-    req = requests.get("https://www.urbandictionary.com/define.php?term=" + word)
+    req = requests.get(f"{UD_URL}/define.php?term={quote(word)}")
     soup = BeautifulSoup(req.text, "html.parser")
     word_el = soup.find("a", class_="word")
     definition_el = soup.find("div", class_="meaning")

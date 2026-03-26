@@ -23,6 +23,7 @@ client = discord.Client(intents=discord.Intents.all())
 triggerCommand = "#urbby "
 
 CHANNELS_FILE = "channels.json"
+STATE_FILE = "state.json"
 
 pending_timezone = set()  # channel_ids awaiting timezone input
 pending_time = set()  # channel_ids awaiting time input
@@ -44,23 +45,46 @@ def save_channels():
     log.info(f"[OK] Saved {len(channels)} channel(s) to {CHANNELS_FILE}")
 
 
-channels = load_channels()  # {channel_id: {"time": "HH:MM", "tz": "UTC"}}
+def load_state():
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r") as f:
+            return json.load(f)
+    return {"last_word_sent": None}
 
-last_word_sent = None
+
+def save_state():
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+
+channels = load_channels()
+state = load_state()
 
 
 def fmt_time(time_str):
-    """Convert HH:MM to 12-hour AM/PM for display."""
     return datetime.strptime(time_str, "%H:%M").strftime("%I:%M %p").lstrip("0")
 
+
 def parse_time(time_str):
-    """Parse HH:MM or H:MM AM/PM and return 24-hour HH:MM string, or None if invalid."""
     for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M"):
         try:
             return datetime.strptime(time_str.strip(), fmt).strftime("%H:%M")
         except ValueError:
             continue
     return None
+
+
+def resolve_timezone(tz_input):
+    """Resolve a timezone string (alias or IANA) to an IANA name. Returns None if invalid."""
+    resolved = TZ_ALIASES.get(tz_input.upper())
+    if resolved:
+        return resolved
+    try:
+        ZoneInfo(tz_input)
+        return tz_input
+    except ZoneInfoNotFoundError:
+        return None
+
 
 TZ_ALIASES = {
     "PST": "America/Los_Angeles",
@@ -78,8 +102,6 @@ TZ_ALIASES = {
 
 @tasks.loop(seconds=30)
 async def send_message():
-    global last_word_sent
-
     channels_to_send = [
         cid for cid, cfg in channels.items()
         if datetime.now(ZoneInfo(cfg["tz"])).strftime("%H:%M") == cfg["time"]
@@ -91,18 +113,20 @@ async def send_message():
     log.info(f"[>>] Word of the day triggered for {len(channels_to_send)} channel(s)")
     word_of_the_day = responses.get_word_of_day()
     current_word = word_of_the_day["list"][0]["word"]
+    still = current_word == state["last_word_sent"]
 
-    if current_word == last_word_sent:
+    if still:
         log.info(f"[==] '{current_word}' unchanged since last send — using still message")
-        message = responses.handle_still_word_of_the_day(word_of_the_day)
     else:
         log.info(f"[>>] New word of the day: '{current_word}'")
-        message = responses.handle_word_of_the_day(word_of_the_day)
-        last_word_sent = current_word
+        state["last_word_sent"] = current_word
+        save_state()
+
+    embed = responses.handle_word_of_the_day(word_of_the_day, still=still)
 
     for channel_id in channels_to_send:
         this_channel = client.get_channel(channel_id)
-        await this_channel.send(embed=message)
+        await this_channel.send(embed=embed)
         log.info(f"[OK] Sent to channel {channel_id}")
 
 
@@ -125,16 +149,11 @@ async def on_message(message):
     # handle pending timezone input
     if message.channel.id in pending_timezone:
         pending_timezone.discard(message.channel.id)
-        tz_input = content.strip().upper()
-        tz_str = TZ_ALIASES.get(tz_input)
+        tz_str = resolve_timezone(content.strip())
         if not tz_str:
-            try:
-                ZoneInfo(content.strip())
-                tz_str = content.strip()
-            except ZoneInfoNotFoundError:
-                log.warning(f"[!!] Channel {message.channel.id} — invalid timezone '{content.strip()}', defaulting to UTC")
-                await message.channel.send("`Invalid timezone. Defaulting to UTC. Use #urbby timezone <tz> to change it.`")
-                tz_str = "UTC"
+            log.warning(f"[!!] Channel {message.channel.id} — invalid timezone '{content.strip()}', defaulting to UTC")
+            await message.channel.send("`Invalid timezone. Defaulting to UTC. Use #urbby timezone <tz> to change it.`")
+            tz_str = "UTC"
         channels[message.channel.id]["tz"] = tz_str
         save_channels()
         log.info(f"[OK] Channel {message.channel.id} — timezone set to {tz_str}")
@@ -167,12 +186,12 @@ async def on_message(message):
     if args_upper == "SET":
         channel_id = message.channel.id
         if channel_id in channels:
-            await message.channel.send("`Channel Already Registered!`")
+            await message.channel.send("`Channel already registered!`")
             return
         channels[channel_id] = {"time": "09:00", "tz": "UTC"}
         save_channels()
         log.info(f"[OK] Channel {channel_id} registered")
-        await message.channel.send("`Channel Registered! What timezone are you in? (e.g. PST, EST, CST, MST, GMT, UTC)`")
+        await message.channel.send("`Channel registered! What timezone are you in? (e.g. PST, EST, CST, MST, GMT, UTC)`")
         pending_timezone.add(channel_id)
 
     # remove channel id
@@ -184,7 +203,7 @@ async def on_message(message):
         channels.pop(channel_id)
         save_channels()
         log.info(f"[--] Channel {channel_id} removed")
-        await message.channel.send("`Channel Removed!`")
+        await message.channel.send("`Channel removed!`")
 
     # set time for word of the day
     elif args_upper.startswith("TIME "):
@@ -211,15 +230,11 @@ async def on_message(message):
             await message.channel.send("`Channel not registered! Use #urbby set first.`")
             return
         tz_str = args[len("TIMEZONE "):].strip()
-        tz_resolved = TZ_ALIASES.get(tz_str.upper())
+        tz_resolved = resolve_timezone(tz_str)
         if not tz_resolved:
-            try:
-                ZoneInfo(tz_str)
-                tz_resolved = tz_str
-            except ZoneInfoNotFoundError:
-                log.warning(f"[!!] Channel {channel_id} — invalid timezone '{tz_str}'")
-                await message.channel.send("`Invalid timezone. Use PST, EST, CST, MST, GMT, UTC or a valid IANA timezone.`")
-                return
+            log.warning(f"[!!] Channel {channel_id} — invalid timezone '{tz_str}'")
+            await message.channel.send("`Invalid timezone. Use PST, EST, CST, MST, GMT, UTC or a valid IANA timezone.`")
+            return
         channels[channel_id]["tz"] = tz_resolved
         save_channels()
         time = channels[channel_id]["time"]
@@ -240,7 +255,7 @@ async def on_message(message):
             "#urbby time HH:MM\n"
             "  Set daily post time (e.g. 8:30 AM or 14:00)\n"
             "#urbby timezone <tz>\n"
-            "  Set timezone (e.g. America/Los_Angeles)\n"
+            "  Set timezone (e.g. PST, EST, America/Los_Angeles)\n"
             "#urbby define <word>\n"
             "  Look up a word on Urban Dictionary\n"
             "#urbby what is <word>\n"
@@ -252,10 +267,8 @@ async def on_message(message):
 
     # define word
     elif args_upper.startswith("DEFINE ") or args_upper.startswith("WHAT IS "):
-        if args_upper.startswith("DEFINE "):
-            word = args[len("DEFINE "):].strip()
-        else:
-            word = args[len("WHAT IS "):].strip()
+        prefix = "DEFINE " if args_upper.startswith("DEFINE ") else "WHAT IS "
+        word = args[len(prefix):].strip()
         if not word:
             await message.channel.send("`Please provide a word. Usage: #urbby define <word>`")
             return
