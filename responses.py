@@ -24,13 +24,12 @@ def build_embed(title, word, definition, example=None) -> discord.Embed:
     return embed
 
 
-def handle_word_of_the_day(data, still=False) -> discord.Embed:
+def handle_word_of_the_day(data) -> discord.Embed:
     first_definition = data["list"][0]
     word = first_definition["word"]
     definition = first_definition["definition"].replace('[', '').replace(']', '')
     example = first_definition.get("example")
-    title = f"Still the Word of the Day: {word}" if still else f"Word of the Day: {word}"
-    return build_embed(title, word, definition, example)
+    return build_embed(f"Word of the Day: {word}", word, definition, example)
 
 
 def get_word_of_day():

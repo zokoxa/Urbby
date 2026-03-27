@@ -59,6 +59,7 @@ def save_state():
 
 channels = load_channels()
 state = load_state()
+last_trigger_minute = None
 
 
 def fmt_time(time_str):
@@ -102,6 +103,11 @@ TZ_ALIASES = {
 
 @tasks.loop(seconds=30)
 async def send_message():
+    global last_trigger_minute
+    now_minute = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if now_minute == last_trigger_minute:
+        return
+
     channels_to_send = [
         cid for cid, cfg in channels.items()
         if datetime.now(ZoneInfo(cfg["tz"])).strftime("%H:%M") == cfg["time"]
@@ -110,19 +116,20 @@ async def send_message():
     if not channels_to_send:
         return
 
+    last_trigger_minute = now_minute
+
     log.info(f"[>>] Word of the day triggered for {len(channels_to_send)} channel(s)")
     word_of_the_day = responses.get_word_of_day()
     current_word = word_of_the_day["list"][0]["word"]
-    still = current_word == state["last_word_sent"]
+    if current_word == state["last_word_sent"]:
+        log.info(f"[==] '{current_word}' unchanged since last send — skipping")
+        return
 
-    if still:
-        log.info(f"[==] '{current_word}' unchanged since last send — using still message")
-    else:
-        log.info(f"[>>] New word of the day: '{current_word}'")
-        state["last_word_sent"] = current_word
-        save_state()
+    log.info(f"[>>] New word of the day: '{current_word}'")
+    state["last_word_sent"] = current_word
+    save_state()
 
-    embed = responses.handle_word_of_the_day(word_of_the_day, still=still)
+    embed = responses.handle_word_of_the_day(word_of_the_day)
 
     for channel_id in channels_to_send:
         this_channel = client.get_channel(channel_id)
