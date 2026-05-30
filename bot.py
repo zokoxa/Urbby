@@ -5,13 +5,14 @@ from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import discord
+import requests
 import responses
 from discord.ext import tasks
 from dotenv import load_dotenv
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
@@ -179,7 +180,11 @@ async def send_message():
         return
 
     log.info(f"[>>] Word of the day triggered for {len(channels_to_send)} channel(s)")
-    word_of_the_day = responses.get_word_of_day()
+    try:
+        word_of_the_day = responses.get_word_of_day()
+    except (requests.RequestException, ValueError):
+        log.exception("[!!] Word of the day fetch failed; will retry on the next loop")
+        return
     current_word = word_of_the_day["list"][0]["word"]
     log.info(f"[>>] Current word of the day: '{current_word}'")
 
@@ -357,7 +362,12 @@ async def on_message(message):
             await message.channel.send("`Please provide a word. Usage: #urbby define <word>`")
             return
         log.info(f"[>>] Channel {message.channel.id} - looking up '{word}'")
-        result = responses.define(word)
+        try:
+            result = responses.define(word)
+        except requests.RequestException:
+            log.exception(f"[!!] Channel {message.channel.id} - Urban Dictionary request failed for '{word}'")
+            await message.channel.send("`Urban Dictionary isn't responding right now. Check the console for details.`")
+            return
         if result is None:
             log.info(f"[--] '{word}' not found in channel {message.channel.id}")
             await message.channel.send(f"`'{word}' isn't in Urban Dictionary! You can add it here: https://www.urbandictionary.com/add.php`")
