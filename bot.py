@@ -220,7 +220,7 @@ async def on_ready():
     await client.change_presence(activity=discord.CustomActivity(name="#urbby define <word>"))
     send_message.start()
     log.info(f"[OK] Urbby bot ready - {len(channels)} registered channel(s)")
-    print("Urbby Clone Bot is running")
+    print("Urbby Bot is running")
 
 
 @client.event
